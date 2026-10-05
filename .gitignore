@@ -1,0 +1,36 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno (credenciales de SQL Server, URLs internas)
+.env
+.env.local
+front/.env
+front/.env.local
+
+# Certificados HTTPS (mkcert) — se regeneran por servidor/entorno
+certs/
+
+# Build de frontend
+front/dist/
+front/dev-dist/
+
+# Herramientas binarias descargadas
+mkcert.exe
+nssm.exe
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Datos reales de clientes / exportaciones (no deben versionarse)
+docs/lecturas_*.txt
+docs/*.log
+
+# Página guardada sin relación con el repo (no es documentación del proyecto)
+docs/MsLecturas Producción.html
+docs/MsLecturas Producción_files/
