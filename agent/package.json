@@ -1,0 +1,13 @@
+{
+  "name": "mslecturas-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Agente outbound: long-polling saliente al bridge del VPS, reenvia tareas por loopback al server.js local. Sin logica de negocio.",
+  "scripts": {
+    "start": "node agent.js",
+    "dev": "node --watch agent.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}

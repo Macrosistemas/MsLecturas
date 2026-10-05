@@ -1,0 +1,15 @@
+{
+  "name": "mslecturas-bridge",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Puente liviano para el VPS: sirve el front y reenvia /api/* al agente local via long-polling. Sin logica de negocio ni acceso a base de datos.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

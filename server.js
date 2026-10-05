@@ -63,9 +63,14 @@ app.get(/^(?!\/api).*/, (req, res) => {
 // ── Inicio de servidores ──────────────────────────────────
 const PORT       = process.env.PORT       || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
+// BIND_HOST: por defecto escucha en todas las interfaces (modo LAN de siempre).
+// Para un servidor que solo va a ser alcanzado por el agente local (patrón
+// agente+bridge VPS), se setea BIND_HOST=127.0.0.1 y no hace falta exponer
+// puertos ni generar certificados en esa máquina.
+const BIND_HOST  = process.env.BIND_HOST  || '0.0.0.0';
 
-http.createServer(app).listen(PORT, '0.0.0.0', () =>
-  console.log(`HTTP  → http://0.0.0.0:${PORT}`)
+http.createServer(app).listen(PORT, BIND_HOST, () =>
+  console.log(`HTTP  → http://${BIND_HOST}:${PORT}`)
 );
 
 const certKey  = './certs/key.pem';
@@ -75,8 +80,8 @@ if (fs.existsSync(certKey) && fs.existsSync(certFile)) {
     key:  fs.readFileSync(certKey),
     cert: fs.readFileSync(certFile),
   };
-  https.createServer(tlsOptions, app).listen(HTTPS_PORT, '0.0.0.0', () =>
-    console.log(`HTTPS → https://0.0.0.0:${HTTPS_PORT}`)
+  https.createServer(tlsOptions, app).listen(HTTPS_PORT, BIND_HOST, () =>
+    console.log(`HTTPS → https://${BIND_HOST}:${HTTPS_PORT}`)
   );
 } else {
   console.warn('Certs no encontrados — solo HTTP activo. Ejecutá generarCert.js');
