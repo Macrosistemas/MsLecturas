@@ -21,6 +21,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 const PORT               = Number(process.env.PORT)               || 4000;
+// Solo Nginx necesita hablarle a este proceso — nunca debe quedar alcanzable
+// directo desde internet sin pasar por TLS. Si en algun escenario especifico
+// hiciera falta exponerlo distinto, es la unica variable a tocar.
+const BIND_HOST           = process.env.BIND_HOST                 || '127.0.0.1';
 const AGENT_TOKEN         = process.env.AGENT_TOKEN                || '';
 const POLL_HOLD_MS        = Number(process.env.POLL_HOLD_MS)       || 25000;
 const HEARTBEAT_STALE_MS  = Number(process.env.HEARTBEAT_STALE_MS) || 35000;
@@ -172,6 +176,6 @@ app.get(/^(?!\/api)(?!\/agent).*/, (req, res) => {
   res.sendFile(path.join(frontDist, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Bridge → http://0.0.0.0:${PORT}  (poll=${POLL_HOLD_MS}ms stale=${HEARTBEAT_STALE_MS}ms taskWait=${TASK_WAIT_MS}ms)`);
+app.listen(PORT, BIND_HOST, () => {
+  console.log(`Bridge → http://${BIND_HOST}:${PORT}  (poll=${POLL_HOLD_MS}ms stale=${HEARTBEAT_STALE_MS}ms taskWait=${TASK_WAIT_MS}ms)`);
 });
