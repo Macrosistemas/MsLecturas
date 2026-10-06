@@ -56,7 +56,7 @@ if %errorLevel% EQU 0 (
 
 echo Instalando servicio "%SERVICE_NAME%" ^(version .exe, sin Node.js^)...
 "%NSSM%" install %SERVICE_NAME% "%SERVER_EXE%"
-"%NSSM%" set %SERVICE_NAME% AppDirectory "%SCRIPT_DIR%"
+"%NSSM%" set %SERVICE_NAME% AppDirectory "%SCRIPT_DIR:~0,-1%"
 "%NSSM%" set %SERVICE_NAME% AppStdout "%SCRIPT_DIR%logs\service-out.log"
 "%NSSM%" set %SERVICE_NAME% AppStderr "%SCRIPT_DIR%logs\service-err.log"
 "%NSSM%" set %SERVICE_NAME% AppRotateFiles 1
