@@ -1,0 +1,14 @@
+{
+  "name": "mslecturas-build-exe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Empaqueta agent.js y server.js como .exe standalone (Node embebido, Single Executable Application) para servidores sin Node.js instalado.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6"
+  }
+}

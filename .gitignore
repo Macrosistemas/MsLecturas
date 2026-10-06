@@ -18,6 +18,10 @@ front/dev-dist/
 mkcert.exe
 nssm.exe
 
+# Ejecutables generados por build-exe/ (~80-90mb c/u, se regeneran con
+# `npm run build` dentro de build-exe/ — no tiene sentido versionarlos)
+build-exe/dist/
+
 # Logs
 *.log
 npm-debug.log*

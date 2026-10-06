@@ -5,6 +5,12 @@ fase de deploy real (VPS + servidor Windows de la Empresa 2); el plan de
 implementación de código está en `feature/agente-vps`. La Empresa 1 no usa
 nada de esto — sigue con HTTPS directo + mkcert como siempre.
 
+> **Estado real:** el lado del VPS ya está desplegado y funcionando para
+> `entegas.macrosistemas.ar` (bridge con pm2, Nginx + certbot, token ya
+> generado). Lo que falta es instalar el agente en el servidor Windows de
+> Entegas — ver sección 5. El resto de este documento queda como referencia
+> general por si se agrega otra empresa más adelante.
+
 ## Resumen del flujo
 
 ```
@@ -113,6 +119,11 @@ mkcert para la Empresa 1).
 
 ## 5. Oficina Empresa 2 (Windows): agente + backend local
 
+Hay dos formas de instalarlo en el servidor Windows de la empresa, según si
+esa máquina tiene Node.js instalado o no.
+
+### 5a. Si la máquina tiene Node.js instalado
+
 El backend local (`server.js`, raíz del repo) se instala exactamente igual
 que para la Empresa 1, pero con `BIND_HOST=127.0.0.1` en su `.env` y sin
 generar certificados (no hace falta `generarCert.js` acá).
@@ -127,10 +138,41 @@ copy ..\nssm.exe .         REM el agente necesita su propia copia de nssm.exe
 service-install.bat        REM como Administrador
 ```
 
+### 5b. Si la máquina NO tiene Node.js (ejecutables standalone)
+
+`build-exe/` empaqueta `agent.js` y `server.js` como `.exe` con Node
+embebido adentro (Single Executable Application) — no hace falta instalar
+nada más en esa máquina. Se generan en la PC de desarrollo:
+
+```bat
+cd build-exe
+npm install
+npm run build
+REM genera build-exe\dist\agent.exe y build-exe\dist\server.exe
+```
+
+Copiar a la máquina de la empresa:
+- `build-exe\dist\server.exe` → raíz del proyecto, junto a un `.env` propio
+  (datos de SQL Server de esa empresa + `BIND_HOST=127.0.0.1`) y `nssm.exe`.
+  Instalar con `service-install-exe.bat` (en vez de `service-install.bat`).
+- `build-exe\dist\agent.exe` → carpeta `agent/`, junto a un `.env` propio
+  (`BRIDGE_URL` / `AGENT_TOKEN` / `LOCAL_API_BASE`) y su propia copia de
+  `nssm.exe`. Instalar con `agent/service-install-exe.bat`.
+
+Los `.exe` pesan ~80-90mb cada uno porque incluyen el runtime de Node
+completo — es esperado, no es un build roto.
+
+Si el código de `agent.js` o `server.js` cambia, hay que volver a correr
+`npm run build` en `build-exe/` y recopiar los `.exe` actualizados; no se
+actualizan solos.
+
+### Ambas opciones
+
 Quedan dos servicios de Windows corriendo en la misma máquina: `MsLecturas`
 (el backend de siempre, ahora en loopback) y `MsLecturasAgent` (el nuevo
 agente). Se administran independientemente con los `service-*.bat` de cada
-carpeta.
+carpeta (están son las mismas para ambas variantes — `start`/`stop`/`status`/
+`uninstall` no dependen de si el proceso es `node algo.js` o un `.exe`).
 
 ## 6. Checklist de validación antes de dar por andando la Empresa 2
 
