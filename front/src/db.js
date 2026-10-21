@@ -85,21 +85,24 @@ export async function insertarLectura(datos) {
   return local_id;
 }
 
-/** Actualiza lectura y fecha_lectura → pone sync_estado='U' (pendiente sync) */
+/** Actualiza lectura y fecha_lectura → pone sync_estado='U' (pendiente sync).
+ *  Devuelve el registro actualizado, para refrescar solo esa fila en pantalla.
+ */
 export async function actualizarLectura(local_id, lectura, fecha_lectura) {
   const reg = await db.se_lecturas.get(local_id);
   if (!reg) throw new Error('Registro no encontrado: ' + local_id);
 
-  const consumo = lectura - (reg.lectura_ant || 0);
-  await db.se_lecturas.update(local_id, {
+  const cambios = {
     lectura,
     fecha_lectura,
-    consumo,
+    consumo:     lectura - (reg.lectura_ant || 0),
     sync_estado: 'U',   // U = actualizado localmente, pendiente de subir
-  });
+  };
+  await db.se_lecturas.update(local_id, cambios);
 
   // Encolar para sync
   await encolarOperacion(local_id, 'se_lecturas', 'UPDATE');
+  return { ...reg, ...cambios };
 }
 
 /** Fecha (YYYY-MM-DD) de la toma de estado cargada en el dispositivo, o null si no hay lecturas.

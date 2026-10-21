@@ -2,9 +2,9 @@
 // MsLecturas — front/src/TomasDeEstado.jsx
 // Formulario principal: listado, filtros, carga de lecturas
 // ============================================================
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { getLecturas, getCallesDeLecturas, actualizarLectura, getPendientesCount, getSinSyncCount, borrarTodasLasLecturas, getFechaTomaActual } from './db.js';
-import { cargarRutaDesdeServidor, verificarConexion } from './syncService.js';
+import { cargarRutaDesdeServidor } from './syncService.js';
 
 function injectCSS() {
   if (document.getElementById('tomas-css')) return;
@@ -33,8 +33,9 @@ function injectCSS() {
     .tabla-wrap{overflow-x:auto;margin-top:4px}
     table{width:100%;border-collapse:collapse;font-size:12px}
     thead th{background:#0f172a;color:#f1f5f9;padding:9px 10px;text-align:left;white-space:nowrap;font-weight:600;position:sticky;top:0}
-    tbody tr{border-bottom:1px solid #fff;transition:filter .15s}
-    tbody tr:hover{filter:brightness(0.96)}
+    tbody tr{border-bottom:1px solid #fff}
+    /* Solo con mouse: en celulares el :hover queda "pegado" al tocar y el filter fuerza repintar la fila */
+    @media(hover:hover){tbody tr:hover{filter:brightness(0.96)}}
     tbody td{padding:8px 10px;vertical-align:middle}
     td.mono{font-family:'IBM Plex Mono',monospace}
     /* Dirección y Cliente son el dato principal para el operador: fuente más grande, se lee sin scrollear */
@@ -206,8 +207,43 @@ function ModalLectura({ registro, onGuardar, onCerrar }) {
   );
 }
 
+// ── Fila de la tabla ──────────────────────────────────────
+// memo: al abrir el modal, guardar una lectura o refrescar contadores solo se
+// redibujan las filas que cambiaron — con rutas de cientos de medidores es lo que
+// hacía lento el botón en celulares de gama baja.
+const FilaLectura = memo(function FilaLectura({ r, puedeModificar, onCargar }) {
+  return (
+    <tr className={`tr-${r.sync_estado}`}>
+      <td style={{ fontWeight: 700 }}>{r.denominacion_calle || '—'} {r.altura}{esBis(r.bis) ? 'b' : ''}</td>
+      <td style={{ fontWeight: 600 }}>{r.denominacion_cliente || '—'}</td>
+      <td className="mono">{r.numero_medidor}</td>
+      <td className="mono">{fmtNum(r.lectura_ant)}</td>
+      <td>{fmtFecha(r.fecha_lectura_ant)}</td>
+      <td className="mono" style={{ fontWeight: r.lectura != null ? 700 : 400, color: r.lectura != null ? '#166534' : '#9ca3af' }}>
+        {fmtNum(r.lectura)}
+      </td>
+      <td>{fmtFecha(r.fecha_lectura)}</td>
+      <td className="mono" style={{ color: r.consumo != null ? '#1d4ed8' : '#9ca3af' }}>
+        {fmtNum(r.consumo)}
+      </td>
+      <td>
+        {puedeModificar && (r.sync_estado === 'P' || r.sync_estado === 'U' || r.sync_estado === 'C') && (
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => onCargar(r)}
+          >
+            {r.sync_estado === 'P' ? 'Cargar' : 'Editar'}
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+});
+
 // ── Componente principal ──────────────────────────────────
-export default function TomasDeEstado({ sesion, onCambio }) {
+// online : estado de conexión (lo verifica App, una sola vez para toda la app)
+// recarga: contador que App incrementa tras sincronizar, para refrescar la lista
+export default function TomasDeEstado({ sesion, online, recarga, onCambio }) {
   injectCSS();
 
   const puedeModificar = sesion?.permite_modif === 'S';
@@ -236,24 +272,22 @@ export default function TomasDeEstado({ sesion, onCambio }) {
 
   // ---- Lista
   const [lista,     setLista]     = useState([]);
-  const [cargando,  setCargando]  = useState(false);
-  const [resumen,   setResumen]   = useState({ P:0, U:0, S:0, C:0 });
+  // Solo la carga inicial muestra "Cargando...": en las siguientes se reemplaza
+  // la lista sin desmontar la tabla, así no se pierde la posición del scroll
+  const [cargando,  setCargando]  = useState(true);
+
+  // Resumen de estados
+  const resumen = useMemo(() => {
+    const res = { P:0, U:0, S:0, C:0 };
+    lista.forEach(r => { if (res[r.sync_estado] !== undefined) res[r.sync_estado]++; });
+    return res;
+  }, [lista]);
 
   // ---- Modal lectura
   const [modalReg,  setModalReg]  = useState(null);
 
-  // ---- Conexión
-  const [online, setOnline] = useState(false);
-
-  useEffect(() => {
-    verificarConexion().then(setOnline);
-    const iv = setInterval(() => verificarConexion().then(setOnline), 5000);
-    return () => clearInterval(iv);
-  }, []);
-
   // Cargar lista con filtros
   const cargarLista = useCallback(async () => {
-    setCargando(true);
     try {
       const arr = await getLecturas({
         calle:       filtCalle    || undefined,
@@ -264,11 +298,6 @@ export default function TomasDeEstado({ sesion, onCambio }) {
         orden,
       });
       setLista(arr);
-
-      // Resumen de estados
-      const res = { P:0, U:0, S:0, C:0 };
-      arr.forEach(r => { if (res[r.sync_estado] !== undefined) res[r.sync_estado]++; });
-      setResumen(res);
 
       // Calles presentes en la toma de estado actual (cualquier sync_estado)
       setCalles(await getCallesDeLecturas());
@@ -282,7 +311,7 @@ export default function TomasDeEstado({ sesion, onCambio }) {
     }
   }, [filtCalle, filtAltDesde, filtAltHasta, filtCliente, filtEstado, orden]);
 
-  useEffect(() => { cargarLista(); }, [cargarLista]);
+  useEffect(() => { cargarLista(); }, [cargarLista, recarga]);
 
   // ---- Cargar nueva ruta desde servidor
   const handleCargarRuta = async () => {
@@ -366,10 +395,13 @@ export default function TomasDeEstado({ sesion, onCambio }) {
   };
 
   // ---- Guardar lectura
+  // Reemplaza solo la fila guardada (no relee ni redibuja toda la ruta)
   const handleGuardarLectura = async (local_id, lectura, fecha_lectura) => {
-    await actualizarLectura(local_id, lectura, fecha_lectura);
+    const actualizado = await actualizarLectura(local_id, lectura, fecha_lectura);
     setModalReg(null);
-    cargarLista();
+    setLista(prev => filtEstado && actualizado.sync_estado !== filtEstado
+      ? prev.filter(r => r.local_id !== local_id)
+      : prev.map(r => r.local_id === local_id ? actualizado : r));
     onCambio?.();
   };
 
@@ -607,30 +639,7 @@ export default function TomasDeEstado({ sesion, onCambio }) {
               </thead>
               <tbody>
                 {lista.map(r => (
-                  <tr key={r.local_id} className={`tr-${r.sync_estado}`}>
-                    <td style={{ fontWeight: 700 }}>{r.denominacion_calle || '—'} {r.altura}{esBis(r.bis) ? 'b' : ''}</td>
-                    <td style={{ fontWeight: 600 }}>{r.denominacion_cliente || '—'}</td>
-                    <td className="mono">{r.numero_medidor}</td>
-                    <td className="mono">{fmtNum(r.lectura_ant)}</td>
-                    <td>{fmtFecha(r.fecha_lectura_ant)}</td>
-                    <td className="mono" style={{ fontWeight: r.lectura != null ? 700 : 400, color: r.lectura != null ? '#166534' : '#9ca3af' }}>
-                      {fmtNum(r.lectura)}
-                    </td>
-                    <td>{fmtFecha(r.fecha_lectura)}</td>
-                    <td className="mono" style={{ color: r.consumo != null ? '#1d4ed8' : '#9ca3af' }}>
-                      {fmtNum(r.consumo)}
-                    </td>
-                    <td>
-                      {puedeModificar && (r.sync_estado === 'P' || r.sync_estado === 'U' || r.sync_estado === 'C') && (
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => setModalReg(r)}
-                        >
-                          {r.sync_estado === 'P' ? 'Cargar' : 'Editar'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <FilaLectura key={r.local_id} r={r} puedeModificar={puedeModificar} onCargar={setModalReg} />
                 ))}
               </tbody>
             </table>

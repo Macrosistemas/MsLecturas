@@ -52,6 +52,7 @@ export default function App() {
   const [syncMsg,      setSyncMsg]      = useState('');
   const [contadores,   setContadores]   = useState({ pend: 0, sync: 0, conf: 0 });
   const [conflictos,   setConflictos]   = useState([]);
+  const [recarga,      setRecarga]      = useState(0); // se incrementa para que TomasDeEstado relea la lista
 
   // Restaurar sesión al arrancar
   useEffect(() => {
@@ -81,15 +82,17 @@ export default function App() {
       getSinSyncCount(),
       getConflictosCount(),
     ]);
-    setContadores({ pend, sync, conf });
+    // Si nada cambió se devuelve el mismo objeto/array: React no re-renderiza
+    // y la tabla de lecturas no se redibuja cada 8s
+    setContadores(prev =>
+      prev.pend === pend && prev.sync === sync && prev.conf === conf ? prev : { pend, sync, conf });
 
     // Cargar conflictos para mostrar modal
-    if (conf > 0) {
-      const conflReg = await db.se_lecturas.where('sync_estado').equals('C').toArray();
-      setConflictos(conflReg);
-    } else {
-      setConflictos([]);
-    }
+    const conflReg = conf > 0
+      ? await db.se_lecturas.where('sync_estado').equals('C').toArray()
+      : [];
+    const claveConfl = arr => arr.map(r => `${r.local_id}:${r.sync_version}`).join('|');
+    setConflictos(prev => claveConfl(prev) === claveConfl(conflReg) ? prev : conflReg);
   }, []);
 
   useEffect(() => {
@@ -107,6 +110,7 @@ export default function App() {
       const res = await sincronizar((msg) => setSyncMsg(msg));
       setSyncMsg(`✓ Subidos: ${res.subidos}  Conflictos: ${res.conflictos}`);
       actualizarContadores();
+      setRecarga(n => n + 1);
     } catch (e) {
       setSyncMsg('✗ ' + e.message);
     } finally {
@@ -179,6 +183,8 @@ export default function App() {
       {/* Contenido principal */}
       <TomasDeEstado
         sesion={sesion}
+        online={online}
+        recarga={recarga}
         onCambio={actualizarContadores}
       />
 
@@ -190,7 +196,7 @@ export default function App() {
         <ConflictoModal
           registro={conflictos[0]}
           versionServidor={null}
-          onResuelta={() => actualizarContadores()}
+          onResuelta={() => { actualizarContadores(); setRecarga(n => n + 1); }}
           onPosponer={() => setConflictos([])}
         />
       )}
