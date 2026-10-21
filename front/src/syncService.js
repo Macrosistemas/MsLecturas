@@ -29,8 +29,10 @@ export async function verificarConexion() {
 //               filtra se_medidores.empleado_toma_estado
 // fechaLectura: fecha ingresada por el usuario (YYYY-MM-DD)
 //               se asigna directamente como fecha_lectura en cada registro
-export async function cargarRutaDesdeServidor(codigoRuta, empleado, fechaLectura, onProgreso) {
+// periodicidad: 'B' | 'M' | '' (todas) — filtra se_medidores.periodicidad
+export async function cargarRutaDesdeServidor(codigoRuta, empleado, fechaLectura, periodicidad, onProgreso) {
   const params = new URLSearchParams({ empleado, fechaLectura });
+  if (periodicidad) params.set('periodicidad', periodicidad);
   const res = await fetch(`${API}/lecturas/ruta/${codigoRuta}?${params}`, {
     cache: 'no-store',
   });
@@ -46,7 +48,7 @@ export async function cargarRutaDesdeServidor(codigoRuta, empleado, fechaLectura
   // Importar aquí para evitar circular
   const { cargarLecturasRuta } = await import('./db.js');
   // fechaLectura se pasa para asignarse en cada registro como fecha_lectura
-  const total = await cargarLecturasRuta(registros, codigoRuta, fechaLectura);
+  const total = await cargarLecturasRuta(registros, codigoRuta, fechaLectura, periodicidad);
   return total;
 }
 

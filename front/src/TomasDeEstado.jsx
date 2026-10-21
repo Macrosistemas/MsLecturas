@@ -3,7 +3,7 @@
 // Formulario principal: listado, filtros, carga de lecturas
 // ============================================================
 import { useState, useEffect, useCallback } from 'react';
-import { getLecturas, getCallesDeLecturas, actualizarLectura, getPendientesCount, getSinSyncCount, borrarTodasLasLecturas } from './db.js';
+import { getLecturas, getCallesDeLecturas, actualizarLectura, getPendientesCount, getSinSyncCount, borrarTodasLasLecturas, getFechaTomaActual } from './db.js';
 import { cargarRutaDesdeServidor, verificarConexion } from './syncService.js';
 
 function injectCSS() {
@@ -124,10 +124,13 @@ function fmtFecha(v) {
   return d.toLocaleDateString('es-AR', { timeZone: 'UTC' });
 }
 
+// Lecturas y consumos son siempre enteros (m³)
 function fmtNum(v) {
   if (v == null) return '—';
-  return Number(v).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return Number(v).toLocaleString('es-AR', { maximumFractionDigits: 0 });
 }
+
+const PERIODICIDADES = { '': 'Todas', B: 'Bimestral', M: 'Mensual' };
 
 // bis: char(1) en SQL Server — 1 = es bis, 0 o vacío = no es bis
 function esBis(v) {
@@ -140,22 +143,22 @@ function ModalLectura({ registro, onGuardar, onCerrar }) {
   const [errLec,  setErrLec]      = useState('');
 
   const consumo = lectura !== '' && registro.lectura_ant != null
-    ? (parseFloat(lectura) - parseFloat(registro.lectura_ant)).toFixed(1)
+    ? fmtNum(parseInt(lectura, 10) - Number(registro.lectura_ant))
     : null;
 
   const validar = () => {
-    if (lectura === '' || isNaN(parseFloat(lectura))) {
-      setErrLec('Ingresá un valor numérico'); return false;
+    if (!/^\d+$/.test(lectura)) {
+      setErrLec('Ingresá un número entero'); return false;
     }
-    if (registro.lectura_ant != null && parseFloat(lectura) < parseFloat(registro.lectura_ant)) {
-      setErrLec(`No puede ser menor a la lectura anterior (${registro.lectura_ant})`); return false;
+    if (registro.lectura_ant != null && parseInt(lectura, 10) < Number(registro.lectura_ant)) {
+      setErrLec(`No puede ser menor a la lectura anterior (${fmtNum(registro.lectura_ant)})`); return false;
     }
     setErrLec(''); return true;
   };
 
   const guardar = () => {
     if (!validar()) return;
-    onGuardar(registro.local_id, parseFloat(lectura), registro.fecha_lectura);
+    onGuardar(registro.local_id, parseInt(lectura, 10), registro.fecha_lectura);
   };
 
   return (
@@ -173,15 +176,17 @@ function ModalLectura({ registro, onGuardar, onCerrar }) {
 
         <div className="field-group">
           <label>Lectura actual *</label>
+          {/* type="text" + inputMode="numeric": en iPhone type="number" no abre el teclado numérico */}
           <input
-            type="number"
-            step="0.1"
-            min={registro.lectura_ant ?? 0}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
             value={lectura}
-            onChange={e => { setLectura(e.target.value); setErrLec(''); }}
+            onChange={e => { setLectura(e.target.value.replace(/\D/g, '')); setErrLec(''); }}
             autoFocus
             onKeyDown={e => e.key === 'Enter' && guardar()}
-            placeholder={`mín. ${registro.lectura_ant ?? 0}`}
+            placeholder={`mín. ${fmtNum(registro.lectura_ant ?? 0)}`}
           />
           {errLec && <div className="error">{errLec}</div>}
         </div>
@@ -212,6 +217,8 @@ export default function TomasDeEstado({ sesion, onCambio }) {
   const [subAccion,     setSubAccion]     = useState('nueva'); // 'nueva' | 'borrar' | 'exportar'
   const [ruta,        setRuta]        = useState('');
   const [fechaGlobal, setFechaGlobal] = useState(() => new Date().toISOString().slice(0, 10));
+  const [periodicidad, setPeriodicidad] = useState(''); // '' = todas | 'B' | 'M'
+  const [fechaTomaActual, setFechaTomaActual] = useState(null); // fecha de la toma ya cargada en el dispositivo
   const [cargandoRuta,setCargandoRuta] = useState(false);
   const [msgRuta,     setMsgRuta]     = useState('');
   const [msgBorrar,   setMsgBorrar]   = useState('');
@@ -265,6 +272,11 @@ export default function TomasDeEstado({ sesion, onCambio }) {
 
       // Calles presentes en la toma de estado actual (cualquier sync_estado)
       setCalles(await getCallesDeLecturas());
+
+      // Si ya hay una toma de estado cargada, la fecha queda fija en la de esa toma
+      const fechaToma = await getFechaTomaActual();
+      setFechaTomaActual(fechaToma);
+      if (fechaToma) setFechaGlobal(fechaToma);
     } finally {
       setCargando(false);
     }
@@ -278,6 +290,11 @@ export default function TomasDeEstado({ sesion, onCambio }) {
     if (!online)             { setMsgRuta('Se necesita conexión al servidor'); return; }
     if (!fechaGlobal)        { setMsgRuta('Ingresá la fecha de lectura'); return; }
     if (!sesion?.empleado)   { setMsgRuta('El usuario no tiene número de empleado asignado'); return; }
+    if (fechaTomaActual && !window.confirm(
+      `Ya hay una toma de estado cargada con fecha ${fmtFecha(fechaTomaActual)}.\n\n` +
+      `Si continuás, los medidores de esta ruta se agregarán a esa misma toma de estado.\n\n` +
+      `Si es una toma de estado nueva, cancelá y borrá antes las lecturas.`
+    )) return;
 
     setCargandoRuta(true);
     setMsgRuta('');
@@ -287,9 +304,10 @@ export default function TomasDeEstado({ sesion, onCambio }) {
         ruta.trim(),
         sesion.empleado,
         fechaGlobal,
+        periodicidad,
         (msg) => setMsgRuta(msg)
       );
-      setMsgRuta(`✓ ${total} medidores cargados para el ${new Date(fechaGlobal).toLocaleDateString('es-AR', { timeZone: 'UTC' })}`);
+      setMsgRuta(`✓ ${total} medidores cargados (${PERIODICIDADES[periodicidad].toLowerCase()}) para el ${fmtFecha(fechaGlobal)}`);
       setRuta('');
       cargarLista();
       onCambio?.();
@@ -395,16 +413,37 @@ export default function TomasDeEstado({ sesion, onCambio }) {
                   </div>
                 )}
 
+                {fechaTomaActual && (
+                  <div style={{ marginBottom: 10, padding: '8px 12px', background: '#fef3c7', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
+                    ⚠ Ya hay una toma de estado cargada con fecha <strong>{fmtFecha(fechaTomaActual)}</strong>. Si continuás, la ruta se agregará a esa misma toma de estado.
+                    Si es una toma de estado <strong>nueva</strong>, primero borrá las lecturas desde <strong>🗑 Borrar lecturas</strong>.
+                  </div>
+                )}
+
                 <div className="ruta-row">
                   <div>
                     <div className="filt-label">Código de ruta *</div>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       value={ruta}
-                      onChange={e => setRuta(e.target.value)}
+                      onChange={e => setRuta(e.target.value.replace(/\D/g, ''))}
                       placeholder="ej. 1001"
                       onKeyDown={e => e.key === 'Enter' && handleCargarRuta()}
                     />
+                  </div>
+                  <div>
+                    <div className="filt-label">Periodicidad</div>
+                    <select
+                      value={periodicidad}
+                      onChange={e => setPeriodicidad(e.target.value)}
+                      style={{ padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff' }}
+                    >
+                      {Object.entries(PERIODICIDADES).map(([v, label]) => (
+                        <option key={v} value={v}>{label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <div className="filt-label">Fecha de lectura *</div>
@@ -412,7 +451,8 @@ export default function TomasDeEstado({ sesion, onCambio }) {
                       type="date"
                       value={fechaGlobal}
                       onChange={e => setFechaGlobal(e.target.value)}
-                      style={{ padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+                      disabled={!!fechaTomaActual}
+                      style={{ padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', background: fechaTomaActual ? '#f3f4f6' : '#fff' }}
                     />
                   </div>
                   <button

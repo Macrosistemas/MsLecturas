@@ -12,11 +12,13 @@ const router = Router();
 
 // ── GET /api/lecturas/ruta/:codigoRuta ────────────────────
 // Carga medidores de una ruta filtrados por empleado_toma_estado
-// Query params: empleado (obligatorio), fechaLectura (obligatorio)
+// Query params: empleado (obligatorio), fechaLectura (obligatorio),
+//               periodicidad (opcional: 'B' bimestral | 'M' mensual — sin valor = todas)
 // La fechaLectura ingresada por el usuario se usa como fecha_lectura en se_lecturas
 router.get('/lecturas/ruta/:codigoRuta', async (req, res) => {
   const { codigoRuta } = req.params;
   const { empleado, fechaLectura } = req.query;
+  const periodicidad = ['B', 'M'].includes(req.query.periodicidad) ? req.query.periodicidad : null;
 
   if (!empleado) {
     return res.status(400).json({ error: 'Parámetro empleado requerido' });
@@ -30,6 +32,7 @@ router.get('/lecturas/ruta/:codigoRuta', async (req, res) => {
     const result = await db.request()
       .input('ruta',     sql.Numeric,  codigoRuta)
       .input('empleado', sql.Numeric,  empleado)
+      .input('periodicidad', sql.VarChar(1), periodicidad)
       .query(`
         SELECT
           m.servicio,
@@ -61,12 +64,15 @@ router.get('/lecturas/ruta/:codigoRuta', async (req, res) => {
         WHERE m.codigo_ruta          = @ruta
           AND m.empleado_toma_estado = @empleado
           AND m.estado               = 'A'
+          AND (@periodicidad IS NULL OR m.periodicidad = @periodicidad)
         ORDER BY ca.denominacion, m.altura, m.bis
       `);
 
     if (result.recordset.length === 0) {
+      const txtPeriodicidad = periodicidad === 'B' ? ' con periodicidad bimestral'
+                            : periodicidad === 'M' ? ' con periodicidad mensual' : '';
       return res.status(404).json({
-        error: `No hay medidores activos para la ruta ${codigoRuta} asignados al empleado ${empleado}`,
+        error: `No hay medidores activos${txtPeriodicidad} para la ruta ${codigoRuta} asignados al empleado ${empleado}`,
       });
     }
 

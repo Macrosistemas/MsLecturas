@@ -102,16 +102,46 @@ export async function actualizarLectura(local_id, lectura, fecha_lectura) {
   await encolarOperacion(local_id, 'se_lecturas', 'UPDATE');
 }
 
+/** Fecha (YYYY-MM-DD) de la toma de estado cargada en el dispositivo, o null si no hay lecturas.
+ *  El dispositivo maneja una sola toma de estado a la vez: todas las lecturas comparten fecha_lectura.
+ */
+export async function getFechaTomaActual() {
+  const reg = await db.se_lecturas.toCollection().first();
+  return reg?.fecha_lectura ? new Date(reg.fecha_lectura).toISOString().slice(0, 10) : null;
+}
+
 /** Carga masiva de lecturas de una ruta (limpia antes).
  *  fechaLectura: string YYYY-MM-DD ingresado por el usuario.
  *  Se asigna directamente como fecha_lectura en cada registro
  *  (el empleado ya fue usado en el servidor para filtrar por empleado_toma_estado).
+ *  periodicidad: 'B' | 'M' | '' (todas) — solo se reemplazan los medidores de la ruta
+ *  con esa periodicidad, así cargar la ruta "mensual" no pisa lo ya cargado de la "bimestral".
  */
-export async function cargarLecturasRuta(registros, codigoRuta, fechaLectura) {
-  // Borra lecturas pendientes de esta ruta solo si no hay sin sincronizar
+export async function cargarLecturasRuta(registros, codigoRuta, fechaLectura, periodicidad) {
+  // Convertir la fecha ingresada a ISO para almacenamiento uniforme
+  const fechaISO = fechaLectura
+    ? new Date(fechaLectura).toISOString()
+    : new Date().toISOString();
+
+  // Una sola toma de estado por dispositivo: si ya hay lecturas con otra fecha,
+  // cargar esta ruta generaría en el servidor una segunda toma de estado para los mismos medidores
+  const fechaActual = await getFechaTomaActual();
+  if (fechaActual && fechaActual !== fechaISO.slice(0, 10)) {
+    const fmt = new Date(fechaActual).toLocaleDateString('es-AR', { timeZone: 'UTC' });
+    throw new Error(
+      `Ya hay una toma de estado cargada con fecha ${fmt}. Para iniciar una nueva toma de estado borrá antes las lecturas.`
+    );
+  }
+
+  // codigo_ruta llega numérico del servidor y codigoRuta como texto del input → comparar con ==
+  const aReemplazar = r =>
+    r.codigo_ruta == codigoRuta &&
+    (!periodicidad || (r.periodicidad || '').trim() === periodicidad);
+
+  // Borra lecturas anteriores de la ruta solo si no hay sin sincronizar
   const pendientesSync = await db.se_lecturas
     .where('sync_estado').equals('U')
-    .and(r => r.codigo_ruta == codigoRuta)
+    .and(aReemplazar)
     .count();
 
   if (pendientesSync > 0) {
@@ -120,15 +150,8 @@ export async function cargarLecturasRuta(registros, codigoRuta, fechaLectura) {
     );
   }
 
-  // Elimina lecturas anteriores de la ruta
-  await db.se_lecturas
-    .where('codigo_ruta').equals(codigoRuta)
-    .delete();
-
-  // Convertir la fecha ingresada a ISO para almacenamiento uniforme
-  const fechaISO = fechaLectura
-    ? new Date(fechaLectura).toISOString()
-    : new Date().toISOString();
+  // Elimina lecturas anteriores de la ruta (y periodicidad)
+  await db.se_lecturas.filter(aReemplazar).delete();
 
   // Inserta todas con sync_estado='P' (pendiente de cargar lectura)
   // fecha_lectura viene definida por el usuario desde la pantalla de sincronizacion
