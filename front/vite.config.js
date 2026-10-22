@@ -18,7 +18,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      // autoUpdate (= skipWaiting + clientsClaim): el SW nuevo se activa apenas se
+      // instala y la página se recarga sola. Con 'prompt' el SW nuevo quedaba "en
+      // espera" mientras hubiera alguna ventana abierta y el aviso se repetía en loop.
+      registerType: 'autoUpdate',
       devOptions:   { enabled: true },
       manifest: {
         name:             'MsLecturas',
